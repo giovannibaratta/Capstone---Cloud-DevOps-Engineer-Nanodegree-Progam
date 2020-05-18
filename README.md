@@ -1,1 +1,1 @@
-Captstone project       
+Capstone project

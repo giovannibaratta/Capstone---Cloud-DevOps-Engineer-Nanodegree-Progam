@@ -1,0 +1,1 @@
+bin/hadolint Dockerfile
