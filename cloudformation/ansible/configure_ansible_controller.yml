@@ -1,0 +1,38 @@
+# CentOs instance
+---
+- name: "Configure ansible controller"
+  hosts: all
+
+  vars:
+      epel_release_url: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+      epel_dest: '/tmp/epel.rpm'
+
+  tasks:
+      - name: "Download epel package"
+        get_url:
+            url: "{{ epel_release_url }}"
+            dest: "{{ epel_dest }}"
+
+      - name: "Install epel"
+        become: true
+        yum:
+            state: present
+            update_cache: true
+            name:
+                - "{{ epel_dest }}"
+
+      - name: "Install dependencies"
+        become: true
+        yum:
+            state: present
+            update_cache: true
+            name:
+                - 'ansible-2.9*'
+
+      - name: 'Copy ssh private key to remote host'
+        copy:
+            src: "{{ key_to_push }}"
+            dest: '~/.ssh/instance_private_key.pem'
+            owner: "{{ ansible_user }}"
+            group: "{{ ansible_user }}"
+            mode: '0400'

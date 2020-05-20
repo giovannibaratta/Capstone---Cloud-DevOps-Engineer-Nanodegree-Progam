@@ -1,0 +1,52 @@
+# Target platform: Ubuntu 18.04
+---
+- hosts: all
+  become: true
+  vars:
+    jenkins_apt_key: https://pkg.jenkins.io/debian-stable/jenkins.io.key
+
+  tasks:
+    - name: "Add Jenkins apt-key"
+      apt_key:
+        state: present
+        url: "{{ jenkins_apt_key }}"
+
+    - name: "Add Jenkins repository"
+      copy:
+        content: 'deb https://pkg.jenkins.io/debian-stable binary/'
+        dest:  '/etc/apt/sources.list.d/jenkins.list'
+        
+    - name: "Ensure that Java and docker are installed"
+      apt:
+        name:
+            - docker.io=19.03.6*
+            - default-jre=2:1.11*
+        state: present
+        update_cache: true
+
+    - name: "Ensure that Jenkins is installed"
+      apt:
+        name:
+          - jenkins=2.222.3
+        state: present
+        update_cache: true
+
+    - name: "Add jenkins user to docker group"
+      user:
+        name: jenkins
+        state: present
+        groups:
+            - docker
+        append: true
+        
+    - name: "Reboot server"
+      reboot:  
+        connect_timeout: 300
+        post_reboot_delay: 45
+        reboot_timeout: 300
+
+    - name: "Retrieve jenkins initial password"
+      fetch:
+        src: /var/lib/jenkins/secrets/initialAdminPassword
+        dest: ~/jenkins_initial_admin_password/
+        flat: true

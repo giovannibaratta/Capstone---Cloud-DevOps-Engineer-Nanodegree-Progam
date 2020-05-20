@@ -1,0 +1,260 @@
+Parameters:
+    ProjectName:
+        Description: The name of the project
+        Type: String
+
+    vpcNetId:
+        Description: vpc network id
+        Type: String
+        Default: 10.0.0.0/16
+
+    privateNetId1:
+        Description: private subnet 1 network id
+        Type: String
+        Default: 10.0.1.0/24
+
+    privateNetId2:
+        Description: private subnet 2 network id
+        Type: String
+        Default: 10.0.2.0/24
+
+    publicNetId1:
+        Description: private subnet 1 network id
+        Type: String
+        Default: 10.0.253.0/24
+
+    publicNetId2:
+        Description: public subnet 2 network id
+        Type: String
+        Default: 10.0.254.0/24
+
+
+Resources: 
+    vpc:
+        Type: AWS::EC2::VPC
+        Properties: 
+            CidrBlock: !Ref vpcNetId
+            EnableDnsHostnames: True
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: !Sub ${ProjectName}-VPC
+
+    privateSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties: 
+            AvailabilityZone: !Select [ 0 , !GetAZs ]
+            CidrBlock: !Ref privateNetId1
+            MapPublicIpOnLaunch: false
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: !Sub ${ProjectName}-PrivateSubnet1
+            VpcId: !Ref vpc
+
+    privateSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties: 
+            AvailabilityZone: !Select [ 1 , !GetAZs ]
+            CidrBlock: !Ref privateNetId2
+            MapPublicIpOnLaunch: false
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: !Sub ${ProjectName}-PrivateSubnet2
+            VpcId: !Ref vpc
+
+    publicSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties: 
+            AvailabilityZone: !Select [ 0 , !GetAZs ]
+            CidrBlock: !Ref publicNetId1
+            MapPublicIpOnLaunch: true
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: !Sub ${ProjectName}-PublicSubnet1
+            VpcId: !Ref vpc
+
+    publicSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties: 
+            AvailabilityZone: !Select [ 1 , !GetAZs ]
+            CidrBlock: !Ref publicNetId2
+            MapPublicIpOnLaunch: true
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: !Sub ${ProjectName}-PublicSubnet2
+            VpcId: !Ref vpc
+
+    internetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties: 
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+
+    internetGatewayAttachment:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties: 
+            InternetGatewayId: !Ref internetGateway
+            VpcId: !Ref vpc
+
+    natInstance:
+        Type: AWS::EC2::Instance
+        Properties: 
+            ImageId: ami-00a9d4a05375b2763
+            InstanceType: t2.micro
+            SecurityGroupIds: 
+                - !GetAtt natSecurityGroup.GroupId
+            SourceDestCheck: false
+            SubnetId: !Ref publicSubnet1
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: Nat
+
+    natSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: Nat security group
+            SecurityGroupEgress:
+                -   CidrIp: 0.0.0.0/0
+                    Description: Allow outbound HTTP access to the Internet
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+                -   CidrIp: 0.0.0.0/0
+                    Description: Allow outbound HTTPS access to the Internet
+                    FromPort: 443
+                    IpProtocol: tcp
+                    ToPort: 443
+            SecurityGroupIngress: 
+                -   CidrIp: !GetAtt vpc.CidrBlock
+                    Description: Allow inbound HTTP access from local
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+                -   CidrIp: !GetAtt vpc.CidrBlock
+                    Description: Allow inbound HTTPS access from local
+                    FromPort: 443
+                    IpProtocol: tcp
+                    ToPort: 443
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: !Ref vpc
+    
+    #############
+    ## ROUTING ##
+    #############
+
+    publicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties: 
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: !Ref vpc
+
+    publicRouting:
+        Type: AWS::EC2::Route
+        DependsOn: internetGatewayAttachment
+        Properties: 
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref internetGateway
+            RouteTableId: !Ref publicRouteTable
+
+    pubSubnet1RouteTableAssociaction:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties: 
+            RouteTableId: !Ref publicRouteTable
+            SubnetId: !Ref publicSubnet1
+
+    pubSubnet2RouteTableAssociaction:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties: 
+            RouteTableId: !Ref publicRouteTable
+            SubnetId: !Ref publicSubnet2
+
+    privateRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties: 
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: !Ref vpc
+
+    privateRouting:
+        Type: AWS::EC2::Route
+        Properties: 
+            DestinationCidrBlock: 0.0.0.0/0
+            InstanceId: !Ref natInstance
+            RouteTableId: !Ref privateRouteTable
+
+    privSubnet1RouteTableAssociaction:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties: 
+            RouteTableId: !Ref privateRouteTable
+            SubnetId: !Ref privateSubnet1
+
+    privSubnet2RouteTableAssociaction:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties: 
+            RouteTableId: !Ref privateRouteTable
+            SubnetId: !Ref privateSubnet2
+
+
+###############
+### OUTPUS ####
+###############
+
+Outputs:
+    vpc:
+        Description: Reference to VPCID
+        Value: !Ref vpc
+        Export:
+            Name: !Sub ${ProjectName}-vpcId
+
+    vpcCidrBlock:
+        Description: Vpc CidrBlock
+        Value: !GetAtt vpc.CidrBlock
+        Export:
+            Name: !Sub ${ProjectName}-vpcCidrBlock
+
+    privateSubnet1:
+        Description: Reference to the first private subnet
+        Value: !Ref privateSubnet1
+        Export:
+            Name: !Sub ${ProjectName}-privateSubnet1Id
+    
+    privateSubnet2:
+        Description: Reference to the second private subnet
+        Value: !Ref privateSubnet2
+        Export:
+            Name: !Sub ${ProjectName}-privateSubnet2Id
+
+    publicSubnet1:
+        Description: Reference to the first public subnet
+        Value: !Ref publicSubnet1
+        Export:
+            Name: !Sub ${ProjectName}-publicSubnet1Id
+
+    publicSubnet2:
+        Description: Reference to the first second subnet
+        Value: !Ref publicSubnet2
+        Export:
+            Name: !Sub ${ProjectName}-publicSubnet2Id
+    
+    natElasticIP:
+        Description: nat elastic IP
+        Value: !GetAtt natInstance.PublicIp
+        Export:
+            Name: !Sub ${ProjectName}-natElasticIp

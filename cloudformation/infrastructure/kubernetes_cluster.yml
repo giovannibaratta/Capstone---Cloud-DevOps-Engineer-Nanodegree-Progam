@@ -1,0 +1,295 @@
+Parameters:
+
+    ProjectName:
+        Description: The name of the project
+        Type: String
+
+    AutoScalingMinSize:
+        Description: Minimum number of instance in the autoscaling group
+        Type: Number
+        MinValue: 1
+        Default: 2
+
+    AutoScalingMaxSize:
+        Description: Maximum number of instance in the autoscaling group
+        Type: Number
+        MinValue: 1
+
+    InstanceType:
+        Description: Instance type to launch in the autoscaling group
+        Type: String
+        Default: t2.micro
+
+Resources:
+
+    ######################
+    # INSTANCE TEMPLATES #
+    ######################
+
+    microk8sLaunchTemplate:
+        Type: AWS::EC2::LaunchTemplate
+        Properties: 
+            LaunchTemplateName: microk8sLaunchTempalte
+            LaunchTemplateData: 
+                InstanceType: !Ref InstanceType
+                ImageId: ami-085925f297f89fce1 # Ubuntu 18.04 server
+                KeyName: microk8s_key
+                BlockDeviceMappings:
+                    -   DeviceName: /dev/sdb
+                        Ebs:
+                            VolumeSize: 10
+                SecurityGroupIds: 
+                    - !GetAtt microk8sSecurityGroup.GroupId
+
+    ######################
+    ##### INSTANCES ######
+    ######################
+
+    microk8sManager:
+        Type: AWS::EC2::Instance
+        Properties:
+            LaunchTemplate:
+                LaunchTemplateId: !Ref microk8sLaunchTemplate
+                Version: 1
+            SubnetId:
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-privateSubnet1Id"
+            Tags:
+                - Key: MicroK8s
+                  Value: Manager
+                - Key: Name
+                  Value: Microk8sManager
+
+    ######################
+    # AutoScaling Group ##
+    ######################
+
+    microk8sWorkerAutoScalingGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties: 
+            VPCZoneIdentifier:
+                - Fn::ImportValue:
+                    !Sub "${ProjectName}-privateSubnet1Id"
+                - Fn::ImportValue:
+                    !Sub "${ProjectName}-privateSubnet2Id"
+
+            AutoScalingGroupName: !Sub ${ProjectName}-microk8sWorkerAutoScalingGroup
+            DesiredCapacity: !Ref AutoScalingMinSize
+            HealthCheckGracePeriod: 240
+            HealthCheckType: ELB
+            LaunchTemplate:
+                LaunchTemplateId: !Ref microk8sLaunchTemplate
+                Version: 1
+            MaxSize: !Ref AutoScalingMaxSize
+            MinSize: !Ref AutoScalingMinSize
+            TargetGroupARNs: 
+                - !Ref TargetGroup
+            Tags:
+                - Key: MicroK8s
+                  Value: Worker
+                  PropagateAtLaunch: True
+                - Key: Name
+                  Value: MicroK8sWorker
+                  PropagateAtLaunch: True
+
+    ScalingOutPolicy:
+        Type: AWS::AutoScaling::ScalingPolicy
+        Properties: 
+            AdjustmentType: ChangeInCapacity
+            AutoScalingGroupName: !Ref microk8sWorkerAutoScalingGroup
+            PolicyType: SimpleScaling
+            ScalingAdjustment: 1
+
+    ScalingOutAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties: 
+            AlarmActions: 
+                - !Ref ScalingOutPolicy
+            AlarmDescription: Trigger scale out policy
+            ComparisonOperator: GreaterThanThreshold
+            EvaluationPeriods: 2
+            MetricName: CPUUtilization
+            Namespace: AWS/EC2
+            Period: 60
+            Statistic: Average
+            Threshold: 60.0
+            Unit: Percent
+
+    ScalingInPolicy:
+        Type: AWS::AutoScaling::ScalingPolicy
+        Properties: 
+            AdjustmentType: ChangeInCapacity
+            AutoScalingGroupName: !Ref microk8sWorkerAutoScalingGroup
+            PolicyType: SimpleScaling
+            ScalingAdjustment: -1
+
+    ScalingOutAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties: 
+            AlarmActions: 
+                - !Ref ScalingInPolicy
+            AlarmDescription: Trigger scale in policy
+            ComparisonOperator: LessThanThreshold
+            EvaluationPeriods: 2
+            MetricName: CPUUtilization
+            Namespace: AWS/EC2
+            Period: 60
+            Statistic: Average
+            Threshold: 40.0
+            Unit: Percent
+
+
+    ######################
+    ######## ROLES #######
+    ######################
+
+    ######################
+    ## SECURITY GROUPS ###
+    ######################
+
+    microk8sSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: Enable ingress HTTP & SSH traffic from local. All egress traffic allowed.
+            SecurityGroupEgress: 
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable all egress traffic
+                    FromPort: 0
+                    IpProtocol: -1
+                    ToPort: 65535
+
+            SecurityGroupIngress: 
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable internal traffic on port 22
+                    FromPort: 22
+                    IpProtocol: tcp
+                    ToPort: 22
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable internal traffic on port 80
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    microk8sManagerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: Enable traffic for k8s cluster.
+            SecurityGroupEgress: 
+                -   CidrIp: 127.0.0.1/32
+                    Description: Fake rule
+                    FromPort: 0
+                    IpProtocol: -1
+                    ToPort: 65535
+
+            SecurityGroupIngress: 
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable internal traffic for cluster
+                    FromPort: 25000
+                    IpProtocol: tcp
+                    ToPort: 25000
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    LBSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: Enable HTTP port 80 traffic on load balancer
+            SecurityGroupEgress: 
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable egress traffic only on local vpc
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+
+            SecurityGroupIngress: 
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable only ingress traffic on port 80
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    ######################
+    ### LOAD BALANCER ####
+    ######################
+    
+    LoadBalancer:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties: 
+            IpAddressType: ipv4
+            Name: !Sub ${ProjectName}-LoadBalancer
+            SecurityGroups: 
+                - !Ref LBSecurityGroup
+            Subnets: 
+                - Fn::ImportValue: !Sub "${ProjectName}-publicSubnet1Id"
+                - Fn::ImportValue: !Sub "${ProjectName}-publicSubnet2Id"
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            Type: application
+
+    TargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties: 
+            HealthCheckEnabled: true
+            HealthCheckIntervalSeconds: 30
+            HealthCheckPath: /
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 3
+            Port: 80
+            Protocol: HTTP
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            TargetType: instance
+            UnhealthyThresholdCount: 2
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    Listener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties: 
+            DefaultActions: 
+                - Type: "forward"
+                  TargetGroupArn: !Ref TargetGroup
+            LoadBalancerArn: !Ref LoadBalancer
+            Port: 80
+            Protocol: HTTP
+
+
+###############
+### OUTPUS ####
+###############
+
+Outputs:
+    loadBalancerDns:
+        Description: Load balancer DNS
+        Value: !Sub
+            - http://${DNS}
+            - { DNS : !GetAtt LoadBalancer.DNSName }
+        Export:
+            Name: !Sub ${ProjectName}-loadBalancerDns

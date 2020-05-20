@@ -1,0 +1,18 @@
+[
+    {
+        "ParameterKey":"ProjectName",
+        "ParameterValue":"capstone"
+    },
+    {
+        "ParameterKey":"AutoScalingMinSize",
+        "ParameterValue":"2"
+    },
+    {
+        "ParameterKey":"AutoScalingMaxSize",
+        "ParameterValue":"3"
+    },
+    {
+        "ParameterKey":"InstanceType",
+        "ParameterValue":"t2.micro"
+    }
+]
