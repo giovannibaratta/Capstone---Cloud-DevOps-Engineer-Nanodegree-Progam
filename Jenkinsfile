@@ -16,6 +16,12 @@ pipeline{
             }
         }
 
+        stage("Security scan"){
+            steps{
+                aquaMicroscanner imageName: "giovannibaratta/capstone-project:latest", notCompliesCmd: 'exit 1', onDisallowed: 'fail', outputFormat: 'html'
+            }
+        }
+
         stage("Push image"){
             steps{
                 script{
