@@ -27,7 +27,20 @@
             state: present
             update_cache: true
             name:
+                - 'python-pip'
                 - 'ansible-2.9*'
+                - 'unzip-6*'
+
+      - name: Copy requirements
+        copy:
+            src: ansible_controller_requirements.txt
+            dest: /tmp/requirements.txt
+
+      - name: "Install pip requirements"
+        become: true
+        pip:
+            state: present
+            requirements: /tmp/requirements.txt
 
       - name: 'Copy ssh private key to remote host'
         copy:
@@ -36,3 +49,27 @@
             owner: "{{ ansible_user }}"
             group: "{{ ansible_user }}"
             mode: '0400'
+
+      - name: "Zip local repo"
+        delegate_to: 127.0.0.1
+        archive:
+            path: "{{ local_repo_root_dir }}"
+            dest: '/tmp/archive_repo.zip'
+            format: zip
+      
+      - name: "Make repo folder"
+        file:
+            state: directory
+            path: '~/repo'
+
+      - name: "Copy and unzip archive"
+        unarchive:
+            remote_src: false
+            src: '/tmp/archive_repo.zip'
+            dest: '~/repo'
+
+      - name: "Copy controller address to localhost"
+        delegate_to: 127.0.0.1
+        copy:
+            dest: '/tmp/ansible_controller_address'
+            content: "{{ inventory_hostname }}"

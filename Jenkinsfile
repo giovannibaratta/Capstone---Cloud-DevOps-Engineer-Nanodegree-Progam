@@ -10,7 +10,19 @@ pipeline{
 
         stage("Build docker image"){
             steps{
-                sh 'scripts/build_docker.sh'
+                script{
+                    docker_image = docker.build("giovannibaratta/capstone-project:latest")
+                }
+            }
+        }
+
+        stage("Push image"){
+            steps{
+                script{
+                    docker.withRegistry('https://registry.hub.docker.com', "docker-credential"){
+                        docker_image.push()
+                    }
+                }
             }
         }
     }

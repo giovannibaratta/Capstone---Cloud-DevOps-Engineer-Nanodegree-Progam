@@ -14,13 +14,13 @@
     - name: "Add Jenkins repository"
       copy:
         content: 'deb https://pkg.jenkins.io/debian-stable binary/'
-        dest:  '/etc/apt/sources.list.d/jenkins.list'
-        
+        dest: '/etc/apt/sources.list.d/jenkins.list'
+
     - name: "Ensure that Java and docker are installed"
       apt:
         name:
-            - docker.io=19.03.6*
-            - default-jre=2:1.11*
+          - docker.io=19.03.6*
+          - default-jre=2:1.11*
         state: present
         update_cache: true
 
@@ -36,11 +36,11 @@
         name: jenkins
         state: present
         groups:
-            - docker
+          - docker
         append: true
-        
+
     - name: "Reboot server"
-      reboot:  
+      reboot:
         connect_timeout: 300
         post_reboot_delay: 45
         reboot_timeout: 300

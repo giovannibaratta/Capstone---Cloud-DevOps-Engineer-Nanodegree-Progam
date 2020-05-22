@@ -35,6 +35,7 @@ Resources:
         Properties: 
             CidrBlock: !Ref vpcNetId
             EnableDnsHostnames: True
+            EnableDnsSupport: True
             Tags: 
                 - Key: ProjectName
                   Value: !Sub ${ProjectName}
@@ -211,6 +212,15 @@ Resources:
             RouteTableId: !Ref privateRouteTable
             SubnetId: !Ref privateSubnet2
 
+    #############
+    ## ROUTE 53 #
+    #############
+
+    route53:
+        Type: AWS::Route53::HostedZone
+        Properties: 
+            Name: 'giovannibaratta.digital'
+
 
 ###############
 ### OUTPUS ####
@@ -222,6 +232,12 @@ Outputs:
         Value: !Ref vpc
         Export:
             Name: !Sub ${ProjectName}-vpcId
+
+    route53:
+        Description: Reference to Route53
+        Value: !Ref route53
+        Export:
+            Name: !Sub ${ProjectName}-route53Id
 
     vpcCidrBlock:
         Description: Vpc CidrBlock

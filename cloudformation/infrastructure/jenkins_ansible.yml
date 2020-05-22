@@ -21,6 +21,7 @@ Resources:
             ImageId: ami-0083662ba17882949 # CentOs 7
             InstanceType: t2.micro
             KeyName: ansible_controller
+            IamInstanceProfile: !Ref listEC2Profile
             SecurityGroupIds: 
                 - !GetAtt ansibleControllerSecurityGroup.GroupId
             SubnetId:
@@ -53,6 +54,38 @@ Resources:
     ######################
     ######## ROLES #######
     ######################
+
+    listEC2Role:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                - Effect: "Allow"
+                  Principal: 
+                    Service: 
+                        - "ec2.amazonaws.com"
+                  Action:
+                        - "sts:AssumeRole"
+            Description: Enable listing of EC2 istances
+            Policies:
+                - PolicyName: root
+                  PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                      - Effect: Allow
+                        Action: "ec2:Describe*"
+                        Resource: "*"
+            Tags:
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+
+
+    listEC2Profile:
+        Type: AWS::IAM::InstanceProfile
+        Properties: 
+            Roles:
+                - !Ref listEC2Role
 
     ######################
     ## SECURITY GROUPS ###

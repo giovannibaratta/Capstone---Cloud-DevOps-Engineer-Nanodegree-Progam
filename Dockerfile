@@ -1,3 +1,5 @@
-FROM ubuntu:18.04
+FROM nginx:1.18.0
 
-CMD [ "echo", "Hello World" ]
+COPY app /usr/share/nginx/html
+
+EXPOSE 80

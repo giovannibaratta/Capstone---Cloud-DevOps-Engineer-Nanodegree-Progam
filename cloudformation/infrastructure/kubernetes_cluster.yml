@@ -4,21 +4,19 @@ Parameters:
         Description: The name of the project
         Type: String
 
-    AutoScalingMinSize:
-        Description: Minimum number of instance in the autoscaling group
-        Type: Number
-        MinValue: 1
-        Default: 2
-
-    AutoScalingMaxSize:
-        Description: Maximum number of instance in the autoscaling group
-        Type: Number
-        MinValue: 1
-
     InstanceType:
         Description: Instance type to launch in the autoscaling group
         Type: String
         Default: t2.micro
+
+    DeploymentType:
+        Description: Deployment type (green, blue)
+        Type: String
+
+    WebServicePort:
+        Description: Port to expose for web service
+        Type: Number
+        Default: 31000
 
 Resources:
 
@@ -58,86 +56,26 @@ Resources:
                 - Key: MicroK8s
                   Value: Manager
                 - Key: Name
-                  Value: Microk8sManager
-
-    ######################
-    # AutoScaling Group ##
-    ######################
-
-    microk8sWorkerAutoScalingGroup:
-        Type: AWS::AutoScaling::AutoScalingGroup
-        Properties: 
-            VPCZoneIdentifier:
-                - Fn::ImportValue:
-                    !Sub "${ProjectName}-privateSubnet1Id"
-                - Fn::ImportValue:
-                    !Sub "${ProjectName}-privateSubnet2Id"
-
-            AutoScalingGroupName: !Sub ${ProjectName}-microk8sWorkerAutoScalingGroup
-            DesiredCapacity: !Ref AutoScalingMinSize
-            HealthCheckGracePeriod: 240
-            HealthCheckType: ELB
+                  Value: !Sub "MicroK8sManager-${DeploymentType}"
+                - Key: DeploymentType
+                  Value: !Sub "${DeploymentType}"
+    
+    microk8sWorker:
+        Type: AWS::EC2::Instance
+        Properties:
             LaunchTemplate:
                 LaunchTemplateId: !Ref microk8sLaunchTemplate
                 Version: 1
-            MaxSize: !Ref AutoScalingMaxSize
-            MinSize: !Ref AutoScalingMinSize
-            TargetGroupARNs: 
-                - !Ref TargetGroup
+            SubnetId:
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-privateSubnet2Id"
             Tags:
                 - Key: MicroK8s
                   Value: Worker
-                  PropagateAtLaunch: True
                 - Key: Name
-                  Value: MicroK8sWorker
-                  PropagateAtLaunch: True
-
-    ScalingOutPolicy:
-        Type: AWS::AutoScaling::ScalingPolicy
-        Properties: 
-            AdjustmentType: ChangeInCapacity
-            AutoScalingGroupName: !Ref microk8sWorkerAutoScalingGroup
-            PolicyType: SimpleScaling
-            ScalingAdjustment: 1
-
-    ScalingOutAlarm:
-        Type: AWS::CloudWatch::Alarm
-        Properties: 
-            AlarmActions: 
-                - !Ref ScalingOutPolicy
-            AlarmDescription: Trigger scale out policy
-            ComparisonOperator: GreaterThanThreshold
-            EvaluationPeriods: 2
-            MetricName: CPUUtilization
-            Namespace: AWS/EC2
-            Period: 60
-            Statistic: Average
-            Threshold: 60.0
-            Unit: Percent
-
-    ScalingInPolicy:
-        Type: AWS::AutoScaling::ScalingPolicy
-        Properties: 
-            AdjustmentType: ChangeInCapacity
-            AutoScalingGroupName: !Ref microk8sWorkerAutoScalingGroup
-            PolicyType: SimpleScaling
-            ScalingAdjustment: -1
-
-    ScalingOutAlarm:
-        Type: AWS::CloudWatch::Alarm
-        Properties: 
-            AlarmActions: 
-                - !Ref ScalingInPolicy
-            AlarmDescription: Trigger scale in policy
-            ComparisonOperator: LessThanThreshold
-            EvaluationPeriods: 2
-            MetricName: CPUUtilization
-            Namespace: AWS/EC2
-            Period: 60
-            Statistic: Average
-            Threshold: 40.0
-            Unit: Percent
-
+                  Value: !Sub "MicroK8sWorker-${DeploymentType}"
+                - Key: DeploymentType
+                  Value: !Sub "${DeploymentType}"
 
     ######################
     ######## ROLES #######
@@ -166,39 +104,77 @@ Resources:
                     FromPort: 22
                     IpProtocol: tcp
                     ToPort: 22
+                # -   CidrIp: 
+                #         Fn::ImportValue:
+                #             Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                #     Description: Enable internal traffic on port 80
+                #     FromPort: 80
+                #     IpProtocol: tcp
+                #     ToPort: 80
+
                 -   CidrIp: 
                         Fn::ImportValue:
                             Fn::Sub: "${ProjectName}-vpcCidrBlock"
-                    Description: Enable internal traffic on port 80
-                    FromPort: 80
-                    IpProtocol: tcp
-                    ToPort: 80
-            Tags: 
-                - Key: ProjectName
-                  Value: !Sub ${ProjectName}
-            VpcId: 
-                Fn::ImportValue: 
-                    Fn::Sub: "${ProjectName}-vpcId"
-
-    microk8sManagerSecurityGroup:
-        Type: AWS::EC2::SecurityGroup
-        Properties: 
-            GroupDescription: Enable traffic for k8s cluster.
-            SecurityGroupEgress: 
-                -   CidrIp: 127.0.0.1/32
-                    Description: Fake rule
-                    FromPort: 0
-                    IpProtocol: -1
-                    ToPort: 65535
-
-            SecurityGroupIngress: 
-                -   CidrIp: 
-                        Fn::ImportValue:
-                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
-                    Description: Enable internal traffic for cluster
+                    Description: microk8s join
                     FromPort: 25000
                     IpProtocol: tcp
                     ToPort: 25000
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kubelet
+                    FromPort: 10250
+                    IpProtocol: tcp
+                    ToPort: 10250
+                
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kubelet
+                    FromPort: 10255
+                    IpProtocol: tcp
+                    ToPort: 10255
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kub-controller
+                    FromPort: 10257
+                    IpProtocol: tcp
+                    ToPort: 10257
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kube-scheduler
+                    FromPort: 10259
+                    IpProtocol: tcp
+                    ToPort: 10259
+                
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s ssl
+                    FromPort: 12379
+                    IpProtocol: tcp
+                    ToPort: 12379
+                
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s api server
+                    FromPort: 16443
+                    IpProtocol: tcp
+                    ToPort: 16443
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: web service
+                    FromPort: !Ref WebServicePort
+                    IpProtocol: tcp
+                    ToPort: !Ref WebServicePort
             Tags: 
                 - Key: ProjectName
                   Value: !Sub ${ProjectName}
@@ -215,9 +191,9 @@ Resources:
                         Fn::ImportValue:
                             Fn::Sub: "${ProjectName}-vpcCidrBlock"
                     Description: Enable egress traffic only on local vpc
-                    FromPort: 80
+                    FromPort: !Ref WebServicePort
                     IpProtocol: tcp
-                    ToPort: 80
+                    ToPort: !Ref WebServicePort
 
             SecurityGroupIngress: 
                 -   CidrIp: 0.0.0.0/0
@@ -240,7 +216,7 @@ Resources:
         Type: AWS::ElasticLoadBalancingV2::LoadBalancer
         Properties: 
             IpAddressType: ipv4
-            Name: !Sub ${ProjectName}-LoadBalancer
+            Name: !Sub ${ProjectName}-LoadBalancer-${DeploymentType}
             SecurityGroups: 
                 - !Ref LBSecurityGroup
             Subnets: 
@@ -259,12 +235,15 @@ Resources:
             HealthCheckPath: /
             HealthCheckTimeoutSeconds: 5
             HealthyThresholdCount: 3
-            Port: 80
+            Port: !Ref WebServicePort
             Protocol: HTTP
             Tags: 
                 - Key: ProjectName
                   Value: !Sub ${ProjectName}
             TargetType: instance
+            Targets:
+                - Id: !Ref microk8sManager
+                - Id: !Ref microk8sWorker
             UnhealthyThresholdCount: 2
             VpcId: 
                 Fn::ImportValue: 
@@ -280,6 +259,23 @@ Resources:
             Port: 80
             Protocol: HTTP
 
+
+    #############
+    ## ROUTE 53 #
+    #############
+
+    route53Record:
+        Type: AWS::Route53::RecordSet
+        Properties: 
+            AliasTarget: 
+                DNSName: !GetAtt LoadBalancer.DNSName
+                HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+            Comment: !Sub "DeploymentType ${DeploymentType}"
+            Name: "giovannibaratta.digital"
+            HostedZoneId: 
+                Fn::ImportValue:
+                    Fn::Sub: "${ProjectName}-route53Id"
+            Type: A
 
 ###############
 ### OUTPUS ####

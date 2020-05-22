@@ -1,19 +1,19 @@
 ---
 - hosts: all
   become: true
-  
+  name: "Init k8s nodes"
   vars:
     device_path: "/dev/xvdb"
     mounting_point: "/more_space"
     file_system_type: "ext4"
 
   tasks:
-        
+
     - name: "Make file system"
       filesystem:
         fstype: ext4
         dev: "{{ device_path }}"
-    
+
     - name: "Mount extra drive"
       mount:
         state: mounted
@@ -36,9 +36,9 @@
         name: ubuntu
         state: present
         groups:
-            - microk8s
+          - microk8s
         append: true
-        
+
     - name: "Set permission on ~/.kube"
       file:
         path: '~/.kube'
@@ -47,41 +47,73 @@
         group: ubuntu
 
     - name: "Reboot server"
-      reboot:  
+      reboot:
         connect_timeout: 300
         post_reboot_delay: 30
         reboot_timeout: 300
 
 - hosts: k8s_manager
-  tasks: 
+  name: "Create cluster on manager node"
+  tasks:
+
+    - name: Wait for port 25000 to become open on the host, don't start checking for 10 seconds
+      wait_for:
+        port: 25000
+        delay: 5
+
     - name: "Start cluster on manager"
       shell:
         cmd: >
             /snap/bin/microk8s add-node
             | grep "Join node with"
             | cut -d' ' -f6
+      changed_when: false
       register: k8s_manager_add_node
 
     - name: "Print join string"
       debug:
         msg: "Join string -> {{ k8s_manager_add_node.stdout }}"
-    
+
     - name: "Distribute join string"
       set_fact:
         join_string: "{{ k8s_manager_add_node.stdout }}"
-    
+
     - name: "Print join string"
       debug:
         var: join_string
-          
+
 - hosts: k8s_worker
+  name: "Join cluster from worker node"
   become: true
   tasks:
     - name: "Print join string from worker"
       debug:
         msg: "Join string -> {{ hostvars[groups['k8s_manager'][0]]['join_string'] }}"
 
-    - name:
+    - name: "Join cluster"
       shell:
         cmd: "/snap/bin/microk8s join {{ hostvars[groups['k8s_manager'][0]]['join_string'] }}"
-          
+      changed_when: false
+
+- hosts: k8s_manager
+  name: "Deploy web service"
+  
+  tasks:
+    
+    - name: "Copy deployment file"
+      copy:
+        src: files/k8s_deployment.yml
+        dest: ~/k8s_deployment.yml
+
+    - name: "Copy service file"
+      copy:
+        src: files/k8s_service.yml
+        dest: ~/k8s_service.yml
+
+    - name: "Create deployment"
+      shell:
+        cmd: "/snap/bin/microk8s kubectl apply -f k8s_deployment.yml"
+    
+    - name: "Expose service"
+      shell:
+        cmd: "/snap/bin/microk8s kubectl apply -f k8s_service.yml"

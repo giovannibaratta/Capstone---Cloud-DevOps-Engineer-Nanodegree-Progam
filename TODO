@@ -1,0 +1,6 @@
+Configure a load balancer that will balance the traffic between the docker nodes.
+Open port 25000 for microk8s
+
+Optional: 
+    Load test the application
+    Docker Securiy scan 
