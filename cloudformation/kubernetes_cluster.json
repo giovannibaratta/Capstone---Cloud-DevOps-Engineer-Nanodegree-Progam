@@ -9,7 +9,7 @@
     },
     {
         "ParameterKey":"DeploymentType",
-        "ParameterValue":"green"
+        "ParameterValue":"blue"
     },
     {
         "ParameterKey":"UniqueID",
