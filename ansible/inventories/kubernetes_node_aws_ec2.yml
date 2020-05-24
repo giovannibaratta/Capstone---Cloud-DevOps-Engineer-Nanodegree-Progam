@@ -1,0 +1,15 @@
+plugin: aws_ec2
+regions: 
+    - us-east-1
+filters:
+    tag:Name: MicroK8s*-green*
+    tag:DeploymentType: green
+    instance-state-name: running
+
+groups:
+    k8s_manager: "'Manager' in (tags.MicroK8s)"
+    k8s_worker: "'Worker' in (tags.MicroK8s)"
+    k8s: "'MicroK8s' in (tags)"
+
+compose:
+    ansible_user: "'ubuntu'"

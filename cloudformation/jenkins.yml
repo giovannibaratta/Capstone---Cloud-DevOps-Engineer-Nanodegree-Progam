@@ -1,0 +1,135 @@
+Parameters:
+
+    ProjectName:
+        Description: The name of the project
+        Type: String
+
+    InstanceType:
+        Description: Instance type to launch in the autoscaling group
+        Type: String
+        Default: t2.micro
+
+Resources:
+
+    ######################
+    ##### INSTANCES ######
+    ######################
+
+    jenkinsNode:
+        Type: AWS::EC2::Instance
+        Properties: 
+            ImageId: ami-085925f297f89fce1 # Ubuntu 18.04 server
+            InstanceType: !Ref InstanceType
+            KeyName: jenkins_node
+            IamInstanceProfile: !Ref jenkinsProfile
+            SecurityGroupIds: 
+                - !GetAtt jenkinsSecurityGroup.GroupId
+            SubnetId:
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-publicSubnet2Id"
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+                - Key: Name
+                  Value: JenkinsNode
+
+
+    ######################
+    ######## ROLES #######
+    ######################
+
+    jenkinsRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                - Effect: "Allow"
+                  Principal: 
+                    Service: 
+                        - "ec2.amazonaws.com"
+                  Action:
+                        - "sts:AssumeRole"
+            Description: Enable cloudformation, ec2 creation and listing, route53 update
+            Policies:
+                - PolicyName: root
+                  PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    - Effect: Allow
+                      Action:
+                        - "cloudformation:*"
+                        - "ec2:*"
+                        - "elasticloadbalancing:*"
+                        - "route53:*"
+                      Resource: "*"
+            Tags:
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+
+    jenkinsProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Roles:
+                - !Ref jenkinsRole
+
+    ######################
+    ## SECURITY GROUPS ###
+    ######################
+
+    jenkinsSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupName: Jenkins node security group
+            GroupDescription: Enable ingress/egress connection for jenkins node
+            SecurityGroupIngress: 
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable global IN SSH
+                    FromPort: 22
+                    IpProtocol: tcp
+                    ToPort: 22
+
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable global IN HTTP
+                    FromPort: 8080
+                    IpProtocol: tcp
+                    ToPort: 8080
+            
+            SecurityGroupEgress: 
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable global HTTP for update
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable global HTTPS for update
+                    FromPort: 443
+                    IpProtocol: tcp
+                    ToPort: 443
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable local OUT SSH
+                    FromPort: 22
+                    IpProtocol: tcp
+                    ToPort: 22
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+###############
+### OUTPUS ####
+###############
+
+Outputs:
+
+    jenkinsNodeDns:
+        Description: Jenkins controller DNS
+        Value: !GetAtt jenkinsNode.PublicDnsName
+        Export:
+            Name: !Sub ${ProjectName}-jenkinsNodeDns

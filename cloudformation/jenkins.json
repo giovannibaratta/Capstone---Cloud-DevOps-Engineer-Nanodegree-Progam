@@ -1,0 +1,10 @@
+[
+    {
+        "ParameterKey":"ProjectName",
+        "ParameterValue":"capstone"
+    },
+    {
+        "ParameterKey":"InstanceType",
+        "ParameterValue":"t2.small"
+    }
+]

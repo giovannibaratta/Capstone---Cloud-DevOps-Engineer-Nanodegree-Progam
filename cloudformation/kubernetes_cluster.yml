@@ -1,0 +1,282 @@
+Parameters:
+
+    ProjectName:
+        Description: The name of the project
+        Type: String
+
+    InstanceType:
+        Description: Instance type to launch in the autoscaling group
+        Type: String
+        Default: t2.micro
+
+    DeploymentType:
+        Description: Deployment type (green, blue)
+        Type: String
+
+    WebServicePort:
+        Description: Port to expose for web service
+        Type: Number
+        Default: 31000
+
+    UniqueID:
+        Description: Uniquer id of the deployment
+        Type: String
+        Default: DefaultUniqueID
+
+Resources:
+
+    ######################
+    # INSTANCE TEMPLATES #
+    ######################
+
+    microk8sLaunchTemplate:
+        Type: AWS::EC2::LaunchTemplate
+        Properties: 
+            LaunchTemplateName: !Sub microk8sLaunchTempalte-${UniqueID}
+            LaunchTemplateData: 
+                InstanceType: !Ref InstanceType
+                ImageId: ami-085925f297f89fce1 # Ubuntu 18.04 server
+                KeyName: microk8s_key
+                BlockDeviceMappings:
+                    -   DeviceName: /dev/sdb
+                        Ebs:
+                            VolumeSize: 10
+                SecurityGroupIds: 
+                    - !GetAtt microk8sSecurityGroup.GroupId
+
+    ######################
+    ##### INSTANCES ######
+    ######################
+
+    microk8sManager:
+        Type: AWS::EC2::Instance
+        Properties:
+            LaunchTemplate:
+                LaunchTemplateId: !Ref microk8sLaunchTemplate
+                Version: 1
+            SubnetId:
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-privateSubnet1Id"
+            Tags:
+                - Key: MicroK8s
+                  Value: Manager
+                - Key: Name
+                  Value: !Sub "MicroK8sManager-${DeploymentType}-${UniqueID}"
+                - Key: DeploymentType
+                  Value: !Sub "${DeploymentType}"
+    
+    microk8sWorker:
+        Type: AWS::EC2::Instance
+        Properties:
+            LaunchTemplate:
+                LaunchTemplateId: !Ref microk8sLaunchTemplate
+                Version: 1
+            SubnetId:
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-privateSubnet2Id"
+            Tags:
+                - Key: MicroK8s
+                  Value: Worker
+                - Key: Name
+                  Value: !Sub "MicroK8sWorker-${DeploymentType}-${UniqueID}"
+                - Key: DeploymentType
+                  Value: !Sub "${DeploymentType}"
+
+    ######################
+    ######## ROLES #######
+    ######################
+
+    ######################
+    ## SECURITY GROUPS ###
+    ######################
+
+    microk8sSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: Enable ingress HTTP & SSH traffic from local. All egress traffic allowed.
+            SecurityGroupEgress: 
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable all egress traffic
+                    FromPort: 0
+                    IpProtocol: -1
+                    ToPort: 65535
+
+            SecurityGroupIngress: 
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable internal traffic on port 22
+                    FromPort: 22
+                    IpProtocol: tcp
+                    ToPort: 22
+                # -   CidrIp: 
+                #         Fn::ImportValue:
+                #             Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                #     Description: Enable internal traffic on port 80
+                #     FromPort: 80
+                #     IpProtocol: tcp
+                #     ToPort: 80
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s join
+                    FromPort: 25000
+                    IpProtocol: tcp
+                    ToPort: 25000
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kubelet
+                    FromPort: 10250
+                    IpProtocol: tcp
+                    ToPort: 10250
+                
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kubelet
+                    FromPort: 10255
+                    IpProtocol: tcp
+                    ToPort: 10255
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kub-controller
+                    FromPort: 10257
+                    IpProtocol: tcp
+                    ToPort: 10257
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s kube-scheduler
+                    FromPort: 10259
+                    IpProtocol: tcp
+                    ToPort: 10259
+                
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s ssl
+                    FromPort: 12379
+                    IpProtocol: tcp
+                    ToPort: 12379
+                
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: microk8s api server
+                    FromPort: 16443
+                    IpProtocol: tcp
+                    ToPort: 16443
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: web service
+                    FromPort: !Ref WebServicePort
+                    IpProtocol: tcp
+                    ToPort: !Ref WebServicePort
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    LBSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: Enable HTTP port 80 traffic on load balancer
+            SecurityGroupEgress: 
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable egress traffic only on local vpc
+                    FromPort: !Ref WebServicePort
+                    IpProtocol: tcp
+                    ToPort: !Ref WebServicePort
+
+            SecurityGroupIngress: 
+                -   CidrIp: 0.0.0.0/0
+                    Description: Enable only ingress traffic on port 80
+                    FromPort: 80
+                    IpProtocol: tcp
+                    ToPort: 80
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    ######################
+    ### LOAD BALANCER ####
+    ######################
+    
+    LoadBalancer:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties: 
+            IpAddressType: ipv4
+            Name: !Sub ${ProjectName}-LoadBalancer-${DeploymentType}-${UniqueID}
+            SecurityGroups: 
+                - !Ref LBSecurityGroup
+            Subnets: 
+                - Fn::ImportValue: !Sub "${ProjectName}-publicSubnet1Id"
+                - Fn::ImportValue: !Sub "${ProjectName}-publicSubnet2Id"
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            Type: application
+
+    TargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties: 
+            HealthCheckEnabled: true
+            HealthCheckIntervalSeconds: 30
+            HealthCheckPath: /
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 3
+            Port: !Ref WebServicePort
+            Protocol: HTTP
+            Tags: 
+                - Key: ProjectName
+                  Value: !Sub ${ProjectName}
+            TargetType: instance
+            Targets:
+                - Id: !Ref microk8sManager
+                - Id: !Ref microk8sWorker
+            UnhealthyThresholdCount: 2
+            VpcId: 
+                Fn::ImportValue: 
+                    Fn::Sub: "${ProjectName}-vpcId"
+
+    Listener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties: 
+            DefaultActions: 
+                - Type: "forward"
+                  TargetGroupArn: !Ref TargetGroup
+            LoadBalancerArn: !Ref LoadBalancer
+            Port: 80
+            Protocol: HTTP
+
+###############
+### OUTPUS ####
+###############
+
+Outputs:
+    loadBalancerDns:
+        Description: Load balancer DNS
+        Value: !GetAtt LoadBalancer.DNSName
+        Export:
+            Name: !Sub ${ProjectName}-${UniqueID}-loadBalancerDns
+
+    hostedZoneId:
+        Description: Load balancer hosted zone id
+        Value: !GetAtt LoadBalancer.CanonicalHostedZoneID
+        Export:
+            Name: !Sub ${ProjectName}-${UniqueID}-loadBalancerHostedZoneId
