@@ -9,6 +9,4 @@ COPY app /var/www/html/
 
 EXPOSE 80
 
-THIS_IS_A_ERROR
-
 CMD ["/usr/sbin/apache2ctl", "-DFOREGROUND"]
