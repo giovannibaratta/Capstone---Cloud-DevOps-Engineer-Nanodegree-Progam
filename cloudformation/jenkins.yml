@@ -15,35 +15,18 @@ Resources:
     ##### INSTANCES ######
     ######################
 
-    ansibleController:
-        Type: AWS::EC2::Instance
-        Properties: 
-            ImageId: ami-0083662ba17882949 # CentOs 7
-            InstanceType: t2.micro
-            KeyName: ansible_controller
-            IamInstanceProfile: !Ref listEC2Profile
-            SecurityGroupIds: 
-                - !GetAtt ansibleControllerSecurityGroup.GroupId
-            SubnetId:
-                Fn::ImportValue: 
-                    Fn::Sub: "${ProjectName}-publicSubnet1Id"
-            Tags: 
-                - Key: ProjectName
-                  Value: !Sub ${ProjectName}
-                - Key: Name
-                  Value: AnsibleController
-
     jenkinsNode:
         Type: AWS::EC2::Instance
         Properties: 
             ImageId: ami-085925f297f89fce1 # Ubuntu 18.04 server
-            InstanceType: t2.micro
+            InstanceType: !Ref InstanceType
             KeyName: jenkins_node
+            IamInstanceProfile: !Ref jenkinsProfile
             SecurityGroupIds: 
                 - !GetAtt jenkinsSecurityGroup.GroupId
             SubnetId:
                 Fn::ImportValue: 
-                    Fn::Sub: "${ProjectName}-publicSubnet1Id"
+                    Fn::Sub: "${ProjectName}-publicSubnet2Id"
             Tags: 
                 - Key: ProjectName
                   Value: !Sub ${ProjectName}
@@ -55,7 +38,7 @@ Resources:
     ######## ROLES #######
     ######################
 
-    listEC2Role:
+    jenkinsRole:
         Type: AWS::IAM::Role
         Properties:
             AssumeRolePolicyDocument:
@@ -67,68 +50,32 @@ Resources:
                         - "ec2.amazonaws.com"
                   Action:
                         - "sts:AssumeRole"
-            Description: Enable listing of EC2 istances
+            Description: Enable cloudformation, ec2 creation and listing, route53 update
             Policies:
                 - PolicyName: root
                   PolicyDocument:
                     Version: 2012-10-17
                     Statement:
-                      - Effect: Allow
-                        Action: "ec2:Describe*"
-                        Resource: "*"
+                    - Effect: Allow
+                      Action:
+                        - "cloudformation:*"
+                        - "ec2:*"
+                        - "elasticloadbalancing:*"
+                        - "route53:*"
+                      Resource: "*"
             Tags:
                 - Key: ProjectName
                   Value: !Sub ${ProjectName}
 
-
-    listEC2Profile:
+    jenkinsProfile:
         Type: AWS::IAM::InstanceProfile
-        Properties: 
+        Properties:
             Roles:
-                - !Ref listEC2Role
+                - !Ref jenkinsRole
 
     ######################
     ## SECURITY GROUPS ###
     ######################
-
-    ansibleControllerSecurityGroup:
-        Type: AWS::EC2::SecurityGroup
-        Properties:
-            GroupName: Ansible controller security group
-            GroupDescription: Enable ingress/egress connection for ansible controller
-            SecurityGroupIngress: 
-                -   CidrIp: 0.0.0.0/0
-                    Description: Enable global IN SSH
-                    FromPort: 22
-                    IpProtocol: tcp
-                    ToPort: 22
-            
-            SecurityGroupEgress: 
-                -   CidrIp: 
-                        Fn::ImportValue:
-                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
-                    Description: Enable local OUT SSH
-                    FromPort: 22
-                    IpProtocol: tcp
-                    ToPort: 22
-
-                -   CidrIp: 0.0.0.0/0
-                    Description: Enable global HTTP for update
-                    FromPort: 80
-                    IpProtocol: tcp
-                    ToPort: 80
-
-                -   CidrIp: 0.0.0.0/0
-                    Description: Enable global HTTPS for update
-                    FromPort: 443
-                    IpProtocol: tcp
-                    ToPort: 443
-            Tags: 
-                - Key: ProjectName
-                  Value: !Sub ${ProjectName}
-            VpcId: 
-                Fn::ImportValue: 
-                    Fn::Sub: "${ProjectName}-vpcId"
 
     jenkinsSecurityGroup:
         Type: AWS::EC2::SecurityGroup
@@ -160,6 +107,14 @@ Resources:
                     FromPort: 443
                     IpProtocol: tcp
                     ToPort: 443
+
+                -   CidrIp: 
+                        Fn::ImportValue:
+                            Fn::Sub: "${ProjectName}-vpcCidrBlock"
+                    Description: Enable local OUT SSH
+                    FromPort: 22
+                    IpProtocol: tcp
+                    ToPort: 22
             Tags: 
                 - Key: ProjectName
                   Value: !Sub ${ProjectName}
@@ -172,12 +127,7 @@ Resources:
 ###############
 
 Outputs:
-    ansibleControllerDns:
-        Description: Ansible controller DNS
-        Value: !GetAtt ansibleController.PublicDnsName
-        Export:
-            Name: !Sub ${ProjectName}-ansibleControllerDns
-    
+
     jenkinsNodeDns:
         Description: Jenkins controller DNS
         Value: !GetAtt jenkinsNode.PublicDnsName

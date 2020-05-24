@@ -1,0 +1,92 @@
+# Target platform: Ubuntu 18.04
+---
+- hosts: all
+  become: true
+  vars:
+    jenkins_apt_key: https://pkg.jenkins.io/debian-stable/jenkins.io.key
+    jenkins_home: "/var/lib/jenkins"
+
+  tasks:
+    - name: "Add Jenkins apt-key"
+      apt_key:
+        state: present
+        url: "{{ jenkins_apt_key }}"
+
+    - name: "Add Jenkins repository"
+      copy:
+        content: 'deb https://pkg.jenkins.io/debian-stable binary/'
+        dest: '/etc/apt/sources.list.d/jenkins.list'
+
+    - name: "Install packages"
+      apt:
+        name:
+          - virtualenv=15.1*
+          - python3=3.6*
+          - docker.io=19.03.6*
+          - default-jre=2:1.11*
+          - awscli=1.14.44*
+        state: present
+        update_cache: true
+
+    - name: "Ensure that Jenkins is installed"
+      apt:
+        name:
+          - jenkins=2.222.3
+        state: present
+        update_cache: true
+
+    - name: "Copy pip requirements"
+      copy:
+        src: files/jenkins_requirements.txt
+        dest: /tmp/requirements.txt
+
+    - name: "Install pip dependencies"
+      pip:
+        state: present
+        virtualenv: "{{ jenkins_home }}/virtual_env"
+        virtualenv_command: virtualenv
+        virtualenv_python: python3.6
+        requirements: /tmp/requirements.txt
+
+    - name: "Add jenkins user to docker group"
+      user:
+        name: jenkins
+        state: present
+        groups:
+          - docker
+        append: true
+
+    - name: "Restart jenkins server"
+      service:
+        enabled: true
+        name: jenkins
+        state: restarted
+
+    - name: 'Make .ssh folder'
+      file:
+        state: directory
+        path: "{{ jenkins_home }}/.ssh"
+        owner: "jenkins"
+        group: "jenkins"
+
+    - name: 'Copy ssh ansible controller private key'
+      copy:
+        src: "~/.ssh/ansible_controller.pem"
+        dest: "{{ jenkins_home }}/.ssh/ansible_controller.pem"
+        owner: "jenkins"
+        group: "jenkins"
+        mode: '0400'
+
+    - name: 'Copy ssh microk8s private key'
+      copy:
+        src: "~/.ssh/microk8s_key"
+        dest: "{{ jenkins_home }}/.ssh/microk8s_key"
+        owner: "jenkins"
+        group: "jenkins"
+        mode: '0400'
+
+    - name: "Retrieve jenkins initial password"
+      fetch:
+        src: "{{ jenkins_home }}/secrets/initialAdminPassword"
+        dest: ~/jenkins_initial_admin_password/
+        flat: true

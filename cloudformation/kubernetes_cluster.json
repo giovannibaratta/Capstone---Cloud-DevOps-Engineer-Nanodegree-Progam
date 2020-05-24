@@ -5,10 +5,14 @@
     },
     {
         "ParameterKey":"InstanceType",
-        "ParameterValue":"t2.micro"
+        "ParameterValue":"t2.small"
     },
     {
         "ParameterKey":"DeploymentType",
         "ParameterValue":"green"
+    },
+    {
+        "ParameterKey":"UniqueID",
+        "ParameterValue":"DefaultUniqueID"
     }
 ]

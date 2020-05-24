@@ -15,7 +15,7 @@ spec:
         app: web
     spec:
       containers:
-      - name: nginx
-        image: nginx
+      - name: webapplication
+        image: giovannibaratta/capstone-project:latest
         ports:
         - containerPort: 80

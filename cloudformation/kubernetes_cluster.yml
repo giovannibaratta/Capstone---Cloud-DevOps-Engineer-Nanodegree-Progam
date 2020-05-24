@@ -18,6 +18,11 @@ Parameters:
         Type: Number
         Default: 31000
 
+    UniqueID:
+        Description: Uniquer id of the deployment
+        Type: String
+        Default: DefaultUniqueID
+
 Resources:
 
     ######################
@@ -27,7 +32,7 @@ Resources:
     microk8sLaunchTemplate:
         Type: AWS::EC2::LaunchTemplate
         Properties: 
-            LaunchTemplateName: microk8sLaunchTempalte
+            LaunchTemplateName: !Sub microk8sLaunchTempalte-${UniqueID}
             LaunchTemplateData: 
                 InstanceType: !Ref InstanceType
                 ImageId: ami-085925f297f89fce1 # Ubuntu 18.04 server
@@ -56,7 +61,7 @@ Resources:
                 - Key: MicroK8s
                   Value: Manager
                 - Key: Name
-                  Value: !Sub "MicroK8sManager-${DeploymentType}"
+                  Value: !Sub "MicroK8sManager-${DeploymentType}-${UniqueID}"
                 - Key: DeploymentType
                   Value: !Sub "${DeploymentType}"
     
@@ -73,7 +78,7 @@ Resources:
                 - Key: MicroK8s
                   Value: Worker
                 - Key: Name
-                  Value: !Sub "MicroK8sWorker-${DeploymentType}"
+                  Value: !Sub "MicroK8sWorker-${DeploymentType}-${UniqueID}"
                 - Key: DeploymentType
                   Value: !Sub "${DeploymentType}"
 
@@ -216,7 +221,7 @@ Resources:
         Type: AWS::ElasticLoadBalancingV2::LoadBalancer
         Properties: 
             IpAddressType: ipv4
-            Name: !Sub ${ProjectName}-LoadBalancer-${DeploymentType}
+            Name: !Sub ${ProjectName}-LoadBalancer-${DeploymentType}-${UniqueID}
             SecurityGroups: 
                 - !Ref LBSecurityGroup
             Subnets: 
@@ -259,24 +264,6 @@ Resources:
             Port: 80
             Protocol: HTTP
 
-
-    #############
-    ## ROUTE 53 #
-    #############
-
-    route53Record:
-        Type: AWS::Route53::RecordSet
-        Properties: 
-            AliasTarget: 
-                DNSName: !GetAtt LoadBalancer.DNSName
-                HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
-            Comment: !Sub "DeploymentType ${DeploymentType}"
-            Name: "giovannibaratta.digital"
-            HostedZoneId: 
-                Fn::ImportValue:
-                    Fn::Sub: "${ProjectName}-route53Id"
-            Type: A
-
 ###############
 ### OUTPUS ####
 ###############
@@ -284,8 +271,12 @@ Resources:
 Outputs:
     loadBalancerDns:
         Description: Load balancer DNS
-        Value: !Sub
-            - http://${DNS}
-            - { DNS : !GetAtt LoadBalancer.DNSName }
+        Value: !GetAtt LoadBalancer.DNSName
         Export:
-            Name: !Sub ${ProjectName}-loadBalancerDns
+            Name: !Sub ${ProjectName}-${UniqueID}-loadBalancerDns
+
+    hostedZoneId:
+        Description: Load balancer hosted zone id
+        Value: !GetAtt LoadBalancer.CanonicalHostedZoneID
+        Export:
+            Name: !Sub ${ProjectName}-${UniqueID}-loadBalancerHostedZoneId
