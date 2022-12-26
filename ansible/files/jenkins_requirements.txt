@@ -1,4 +1,4 @@
-wheel==0.34.2
+wheel==0.38.1
 boto==2.49.0
 boto3==1.13.7
 botocore==1.16.7
